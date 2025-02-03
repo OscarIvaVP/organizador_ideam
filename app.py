@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # IMPORTAR LIBRERÍAS
 import os
 import pandas as pd
@@ -33,58 +31,58 @@ if uploaded_file is not None:
             main_zip.extractall(temp_dir)
 
         # Buscar y extraer los ZIPs internos
+        inner_extract_dir = os.path.join(temp_dir, "inner_extracted")
+        os.makedirs(inner_extract_dir, exist_ok=True)
+        
+        inner_zip_files = []
         for root, _, files in os.walk(temp_dir):
             for file in files:
                 if file.endswith(".zip"):
                     zip_inner_path = os.path.join(root, file)
-                    
-                    # Extraer cada ZIP interno
-                    with zipfile.ZipFile(zip_inner_path, "r") as inner_zip:
-                        inner_zip.extractall(temp_dir)
+                    inner_zip_files.append(zip_inner_path)
 
-        # Buscar y leer los archivos CSV
-        data = []
-        for root, _, files in os.walk(temp_dir):
-            for file in files:
-                if file.endswith(".csv"):
-                    csv_path = os.path.join(root, file)
-                    
-                    # Leer el archivo CSV
-                    df = pd.read_csv(csv_path, dtype={11: 'str'})  
-                    data.append(df)
+        # Extraer y procesar cada archivo ZIP interno
+        dataframes = []
+        for zip_file in inner_zip_files:
+            zip_basename = os.path.basename(zip_file)  # Obtener el nombre del ZIP interno
 
-        # Concatenar los DataFrames
-        if data:
-            datos_unidos = pd.concat(data, ignore_index=True)
+            with zipfile.ZipFile(zip_file, "r") as inner_zip:
+                inner_extract_subdir = os.path.join(inner_extract_dir, zip_basename.replace(".zip", ""))
+                os.makedirs(inner_extract_subdir, exist_ok=True)
+                inner_zip.extractall(inner_extract_subdir)
 
-            # Procesar los datos
-            datos_unidos['Fecha'] = pd.to_datetime(datos_unidos['Fecha'])  # Convertir Fecha a datetime
-            nombre_estacion = datos_unidos['CodigoEstacion'].unique()  # Obtener valores únicos de estaciones
-            datos_unidos = datos_unidos[["Fecha", "Valor", "NombreEstacion"]]  # Filtrar columnas relevantes
-            datos_organizados = datos_unidos.pivot_table(index="Fecha", columns="NombreEstacion", values="Valor")
-            datos_organizados = datos_organizados.reset_index()  # Resetear índice
-            datos_organizados['Fecha'] = datos_organizados['Fecha'].dt.date  # Extraer solo la fecha
+                # Buscar archivos CSV dentro de este ZIP
+                csv_files_in_zip = [os.path.join(inner_extract_subdir, file) for file in os.listdir(inner_extract_subdir) if file.endswith(".csv")]
 
-            # Mostrar vista previa
-            st.subheader("📊 Vista previa de los datos organizados")
-            st.dataframe(datos_organizados.head())
+                for csv_file in csv_files_in_zip:
+                    df = pd.read_csv(csv_file, dtype={11: 'str'})  # Leer el CSV
+                    df["Archivo_CSV"] = os.path.basename(csv_file)  # Nombre del archivo CSV
+                    df["Archivo_ZIP"] = zip_basename  # Nombre del archivo ZIP de origen
+                    dataframes.append(df)
 
-            # Guardar el resultado final como Excel
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                datos_organizados.to_excel(writer, index=False, sheet_name="Datos Organizados")
-            output.seek(0)
-
-            # Botón de descarga del Excel final
-            st.download_button(
-                label="📥 Descargar Excel Procesado",
-                data=output,
-                file_name="Datos_Organizados.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
+        # Concatenar los DataFrames con información mejorada
+        if dataframes:
+            combined_df = pd.concat(dataframes, ignore_index=True)
         else:
-            st.warning("⚠️ No se encontraron archivos CSV dentro del ZIP.")
+            combined_df = pd.DataFrame()  # Crear un DataFrame vacío si no se encuentran archivos
+
+        # Mostrar una vista previa de los datos combinados
+        st.subheader("📊 Vista previa de los datos organizados")
+        st.dataframe(combined_df.head())
+
+        # Guardar el resultado final como Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            combined_df.to_excel(writer, index=False, sheet_name="Datos Organizados")
+        output.seek(0)
+
+        # Botón de descarga del Excel final
+        st.download_button(
+            label="📥 Descargar Excel Procesado",
+            data=output,
+            file_name="Datos_Organizados.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
         # Limpiar archivos temporales
         for root, dirs, files in os.walk(temp_dir, topdown=False):
@@ -95,3 +93,4 @@ if uploaded_file is not None:
         os.rmdir(temp_dir)
 
     st.success("✅ Proceso completado con éxito!")
+
