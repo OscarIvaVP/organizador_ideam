@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 # IMPORTAR LIBRERÍAS
 import os
 import pandas as pd
@@ -5,7 +7,7 @@ import zipfile
 import streamlit as st
 import io
 
-# 🎨 CONFIGURURACIÓN DE LA PÁGINA
+# 🎨 CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(
     page_title="Procesador de Archivos ZIP",
     page_icon="📂",
@@ -57,9 +59,10 @@ if uploaded_file is not None:
                 csv_files_in_zip = [os.path.join(inner_extract_subdir, file) for file in os.listdir(inner_extract_subdir) if file.endswith(".csv")]
 
                 for csv_file in csv_files_in_zip:
-                    df = pd.read_csv(csv_file, dtype={11: 'str'})  # Leer CSV
-                    df["Archivo_CSV"] = os.path.basename(csv_file)  # Nombre del CSV
-                    df["Archivo_ZIP"] = zip_basename  # Nombre del ZIP de origen
+                    # Leer el CSV y manejar nulos correctamente
+                    df = pd.read_csv(csv_file, na_values=["", "NA", "N/A"], dtype={11: 'str'})
+                    df["Archivo_CSV"] = os.path.basename(csv_file)
+                    df["Archivo_ZIP"] = zip_basename
                     dataframes.append(df)
 
         # 🔄 CONCATENAR LOS DATOS Y REESTRUCTURAR
@@ -73,24 +76,24 @@ if uploaded_file is not None:
             # 🔹 SELECCIONAR COLUMNAS RELEVANTES
             datos_unidos = combined_df[["Fecha", "Valor", "NombreEstacion"]]
 
-            # 🔹 CREAR TABLA PIVOTANTE
-            datos_organizados = datos_unidos.pivot_table(index="Fecha", columns="NombreEstacion", values="Valor")
-            datos_organizados = datos_organizados.reset_index()
-
             # 📊 CALCULAR COMPLETITUD Y FILTRAR ESTACIONES
             total_estaciones = combined_df['NombreEstacion'].nunique()
 
             st.sidebar.subheader("📊 Filtro de completitud")
             min_percentage = st.sidebar.slider("Porcentaje mínimo de datos requeridos (%)", min_value=0, max_value=100, value=50)
 
-            estaciones_completitud = combined_df.groupby("NombreEstacion").apply(lambda x: x["Valor"].notna().mean() * 100)
+            # Calcular el porcentaje de datos disponibles por estación
+            estaciones_completitud = combined_df.groupby("NombreEstacion")["Valor"].apply(lambda x: x.notna().mean() * 100)
             estaciones_a_incluir = estaciones_completitud[estaciones_completitud >= min_percentage].index
 
+            # Filtrar las estaciones que cumplen con el umbral
             filtered_df = combined_df[combined_df["NombreEstacion"].isin(estaciones_a_incluir)]
 
+            # Verificar número de estaciones antes y después del filtro
             estaciones_filtradas = filtered_df['NombreEstacion'].nunique()
             estaciones_eliminadas = total_estaciones - estaciones_filtradas
 
+            # 🔹 Crear datos organizados después del filtro
             datos_unidos_filtrados = filtered_df[["Fecha", "Valor", "NombreEstacion"]]
             datos_organizados_filtrados = datos_unidos_filtrados.pivot_table(index="Fecha", columns="NombreEstacion", values="Valor")
             datos_organizados_filtrados = datos_organizados_filtrados.reset_index()
@@ -100,12 +103,12 @@ if uploaded_file is not None:
 
             with tab1:
                 st.subheader("📊 Datos Organizados")
-                st.dataframe(datos_organizados.head(10))  # Mostrar primeras 10 filas
+                st.dataframe(datos_organizados_filtrados.head(10))
 
                 # 📥 BOTÓN PARA DESCARGAR EXCEL
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                    datos_organizados.to_excel(writer, index=False, sheet_name="Datos Organizados")
+                    datos_organizados_filtrados.to_excel(writer, index=False, sheet_name="Datos Organizados")
                 output.seek(0)
 
                 st.download_button(
@@ -117,28 +120,14 @@ if uploaded_file is not None:
 
             with tab2:
                 st.subheader("🔍 Datos Crudos de los CSVs")
-                st.dataframe(combined_df.head(10))  # Mostrar primeras 10 filas de los datos originales
+                st.dataframe(combined_df.head(10))
 
             with tab3:
                 st.subheader("📊 Datos Filtrados")
                 st.write(f"Total de estaciones iniciales: {total_estaciones}")
                 st.write(f"Estaciones que cumplen con el {min_percentage}% mínimo: {estaciones_filtradas}")
                 st.write(f"Estaciones eliminadas: {estaciones_eliminadas}")
-
                 st.dataframe(datos_organizados_filtrados.head(10))
-
-                # 📥 BOTÓN PARA DESCARGAR EXCEL FILTRADO
-                output_filtrado = io.BytesIO()
-                with pd.ExcelWriter(output_filtrado, engine="xlsxwriter") as writer:
-                    datos_organizados_filtrados.to_excel(writer, index=False, sheet_name="Datos Organizados Filtrados")
-                output_filtrado.seek(0)
-
-                st.download_button(
-                    label="📥 Descargar Excel Filtrado",
-                    data=output_filtrado,
-                    file_name="Datos_Organizados_Filtrados.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
 
         else:
             st.warning("⚠️ No se encontraron archivos CSV dentro del ZIP.")
