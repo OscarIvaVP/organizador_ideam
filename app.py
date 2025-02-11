@@ -15,7 +15,7 @@ st.set_page_config(
 # 📌 ENCABEZADO
 st.title("📂 Organizador de datos del IDEAM")
 st.markdown("Sube un archivo **ZIP** que contenga los archivos **ZIPs con archivos CSV** descargados del IDEAM escala mensual, y la aplicación los procesará automáticamente para generar un archivo **Excel estructurado**.")
-st.image("diagrama.png", use_column_width=True)
+st.image("diagrama.png", use_container_width=True)
 
 # 📥 SUBIDA DE ARCHIVO ZIP
 st.sidebar.header("📥 Cargar Archivo ZIP")
