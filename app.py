@@ -5,7 +5,7 @@ import zipfile
 import streamlit as st
 import io
 
-# 🎨 CONFIGURACIÓN DE LA PÁGINA
+# 🎨 CONFIGURURACIÓN DE LA PÁGINA
 st.set_page_config(
     page_title="Procesador de Archivos ZIP",
     page_icon="📂",
@@ -13,11 +13,12 @@ st.set_page_config(
 )
 
 # 📌 ENCABEZADO
-st.title("📂 Procesador de Archivos ZIP con CSVs")
-st.markdown("Sube un archivo **ZIP** que contenga otros **ZIPs con archivos CSV**, y la aplicación los procesará automáticamente para generar un archivo **Excel estructurado**.")
+st.title("📂 Organizador de datos del IDEAM")
+st.markdown("Sube un archivo **ZIP** que contenga los archivos **ZIPs con archivos CSV** descargados del IDEAM escala mensual, y la aplicación los procesará automáticamente para generar un archivo **Excel estructurado**.")
+st.image("diagrama.png", use_column_width=True)
 
 # 📥 SUBIDA DE ARCHIVO ZIP
-st.sidebar.header("📥 Cargar Archivo")
+st.sidebar.header("📥 Cargar Archivo ZIP")
 uploaded_file = st.sidebar.file_uploader("📂 Selecciona un archivo ZIP", type="zip")
 
 if uploaded_file is not None:
@@ -76,8 +77,26 @@ if uploaded_file is not None:
             datos_organizados = datos_unidos.pivot_table(index="Fecha", columns="NombreEstacion", values="Valor")
             datos_organizados = datos_organizados.reset_index()
 
+            # 📊 CALCULAR COMPLETITUD Y FILTRAR ESTACIONES
+            total_estaciones = combined_df['NombreEstacion'].nunique()
+
+            st.sidebar.subheader("📊 Filtro de completitud")
+            min_percentage = st.sidebar.slider("Porcentaje mínimo de datos requeridos (%)", min_value=0, max_value=100, value=50)
+
+            estaciones_completitud = combined_df.groupby("NombreEstacion").apply(lambda x: x["Valor"].notna().mean() * 100)
+            estaciones_a_incluir = estaciones_completitud[estaciones_completitud >= min_percentage].index
+
+            filtered_df = combined_df[combined_df["NombreEstacion"].isin(estaciones_a_incluir)]
+
+            estaciones_filtradas = filtered_df['NombreEstacion'].nunique()
+            estaciones_eliminadas = total_estaciones - estaciones_filtradas
+
+            datos_unidos_filtrados = filtered_df[["Fecha", "Valor", "NombreEstacion"]]
+            datos_organizados_filtrados = datos_unidos_filtrados.pivot_table(index="Fecha", columns="NombreEstacion", values="Valor")
+            datos_organizados_filtrados = datos_organizados_filtrados.reset_index()
+
             # 📌 INTERFAZ MEJORADA CON PESTAÑAS
-            tab1, tab2 = st.tabs(["📊 Datos Procesados", "🔍 Vista Previa CSVs"])
+            tab1, tab2, tab3 = st.tabs(["📊 Datos Procesados", "🔍 Vista Previa CSVs", "📊 Datos Filtrados"])
 
             with tab1:
                 st.subheader("📊 Datos Organizados")
@@ -100,6 +119,27 @@ if uploaded_file is not None:
                 st.subheader("🔍 Datos Crudos de los CSVs")
                 st.dataframe(combined_df.head(10))  # Mostrar primeras 10 filas de los datos originales
 
+            with tab3:
+                st.subheader("📊 Datos Filtrados")
+                st.write(f"Total de estaciones iniciales: {total_estaciones}")
+                st.write(f"Estaciones que cumplen con el {min_percentage}% mínimo: {estaciones_filtradas}")
+                st.write(f"Estaciones eliminadas: {estaciones_eliminadas}")
+
+                st.dataframe(datos_organizados_filtrados.head(10))
+
+                # 📥 BOTÓN PARA DESCARGAR EXCEL FILTRADO
+                output_filtrado = io.BytesIO()
+                with pd.ExcelWriter(output_filtrado, engine="xlsxwriter") as writer:
+                    datos_organizados_filtrados.to_excel(writer, index=False, sheet_name="Datos Organizados Filtrados")
+                output_filtrado.seek(0)
+
+                st.download_button(
+                    label="📥 Descargar Excel Filtrado",
+                    data=output_filtrado,
+                    file_name="Datos_Organizados_Filtrados.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
         else:
             st.warning("⚠️ No se encontraron archivos CSV dentro del ZIP.")
 
@@ -115,5 +155,3 @@ if uploaded_file is not None:
         os.rmdir(temp_dir)
 
     st.success("✅ ¡Proceso completado con éxito!")
-
-
